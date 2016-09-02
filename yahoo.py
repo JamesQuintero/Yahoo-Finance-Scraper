@@ -9,7 +9,6 @@ import time                     #scripting timing handling
 import datetime                   #data and time handling
 from datetime import date
 import random
-import json											#handle google finance returning json data
 
 
 class Yahoo:
@@ -519,7 +518,7 @@ class Yahoo:
 		data=data.decode('UTF-8', errors='ignore')
 		return data
 
-		
+
 	def convertNumber(self, number):
 		return int(number*100)/100
 		
