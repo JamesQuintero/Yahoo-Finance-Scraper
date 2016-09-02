@@ -1,4 +1,4 @@
-#Scraper to get stock price and option data from Yahoo finance
+#Scraper to get stock price and option data from yahoo finance
 
 import urllib.request           #script for URL request handling
 import urllib.parse             #script for URL handling
@@ -11,25 +11,14 @@ from datetime import date
 import random
 import json											#handle google finance returning json data
 
-import http.cookiejar #for logging in
-import http.cookies
-
-
 
 class Yahoo:
 
-	cj = None
 	opener = None
 	user_agents=[]
-
 	timezone=4
 
 	def __init__(self):
-
-		#initializes url variables
-		self.cj=http.cookiejar.CookieJar()
-		self.opener=urllib.request.build_opener(urllib.request.HTTPRedirectHandler(),urllib.request.HTTPHandler(debuglevel=0),urllib.request.HTTPCookieProcessor(self.cj))
-
 		self.user_agents.append("Mozilla/5.0 (X10; Ubuntu; Linux x86_64; rv:25.0)")
 		self.user_agents.append("Mozilla/5.0 (Windows NT 6.0; WOW64; rv:12.0)")
 		self.user_agents.append("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537")
@@ -37,17 +26,12 @@ class Yahoo:
 		self.user_agents.append("Mozilla/5.0 (Windows; U; Windows NT 5.2; it; rv:1.8.1.11) Gecko/20071327 Firefox/2.0.0.10")
 		self.user_agents.append("Opera/9.3 (Windows NT 5.1; U; en)")
 
+		self.opener=urllib.request.build_opener(urllib.request.HTTPRedirectHandler(),urllib.request.HTTPHandler(debuglevel=0))
 
-		self.opener.addheaders = [('User-agent', self.user_agents[0])]
-
-
-	def get_current_price(self, stock_symbol):
+	#gets current stock price
+	def currentPrice(self, stock_symbol):
 		try:
-			response = self.opener.open("http://finance.yahoo.com/q?s="+str(stock_symbol).upper(), timeout=10)
-			data=response.read()
-			data=data.decode('UTF-8')
-
-			#decode HTML
+			data=self.httpRequest("http://finance.yahoo.com/q?s="+str(stock_symbol).upper())
 			h=html.parser.HTMLParser()
 			data=h.unescape(data)
 			
@@ -58,44 +42,27 @@ class Yahoo:
 			temp_data=temp_data.strip()
 			return float(temp_data)
 
-
-			
 		except Exception as error:
-			print("Error occcured yahoo.py: "+str(error))
+			print("Error occcured when getting "+str(stock_smbol.upper())+"'s current price: "+str(error))
 			return 0
 
-	#downloads 1min intraday history
-	#timeframe = "day", or "minute"
-	#interval = number of timeframes
-	def download_1min_intraday_history(self, stock_symbol):
-
-		interval=60
+	#downloads 1 days worth of 1min intraday history. 1 day is max on yahoo finance
+	def downloadMinIntradayHistory(self, stock_symbol):
 
 		try:
-			url="http://chartapi.finance.yahoo.com/instrument/1.0/"+str(stock_symbol)+"/chartdata;type=quote;range=1d/csv"
-			# r = request.urlopen(url)
-			#sets user agent
-			user_agent=random.choice(self.user_agents)
-			self.opener.addheaders=[('User-agent', user_agent)]
-
-			r=self.opener.open(url, timeout=30)
-			data=r.read()
+			data=self.httpRequest("http://chartapi.finance.yahoo.com/instrument/1.0/"+str(stock_symbol)+"/chartdata;type=quote;range=1d/csv")
 		except urllib.request.HTTPError as error:
-			print("HTTP Error "+str(stock_symbol)+"...")
-			data=error.read()
+			print("Error when downloading intraday history "+str(stock_symbol)+": "+str(error))
+			return []
 
-		data = data.decode()
 		data=data.split("\n")
 
+		#if price data was received
 		if len(data)>20:
-
-
 
 			#removes beginning information
 			for x in range(0, 20):
 				data.pop(0)
-
-
 
 			new_list=[]
 			for x in range(0, len(data)):
@@ -105,7 +72,6 @@ class Yahoo:
 				#1421764499,107.5850,107.9483,107.0600,107.8800,3135600
 				if len(data[x])!=1:
 					temp={}
-					# temp['timestamp']=data[x][0]
 					temp['date']=data[x][0]
 					temp['open']=data[x][4]
 					temp['high']=data[x][2]
@@ -118,21 +84,14 @@ class Yahoo:
 		else:
 			return []
 
-	#date EX: 1416614400
-	def get_option_data(self, stock_symbol, date):
+	#gets option data like call/put price, strike, etc. for stock_symbol 
+	#date format example: 1416614400
+	def downloadOptionData(self, stock_symbol, date):
 
 		try:
-			response = self.opener.open("http://finance.yahoo.com/q/op?s="+str(stock_symbol)+"&date="+str(date), timeout=30)
-			data=response.read()
-			data=data.decode('UTF-8')
-
-			#decode HTML
+			data=self.httpRequest("http://finance.yahoo.com/q/op?s="+str(stock_symbol)+"&date="+str(date))
 			h=html.parser.HTMLParser()
 			data=h.unescape(data)
-
-
-			data=str(data.encode("UTF-8", "replace"))
-
 
 			data=data.split(',"options"')
 			#includes option data and the rest of the HTML page
@@ -150,21 +109,8 @@ class Yahoo:
 
 
 			to_return={}
-			to_return['call']=self.not_duplicate_code(calls)
-			to_return['put']=self.not_duplicate_code(puts)
-
-			# call_data=to_return['calls']
-			# put_data=to_return['puts']
-
-			# print("Calls: ")
-			# for x in range(0, len(put_data)):
-			# 	print(str(x)+" | "+str(put_data[x]))
-			# print()
-
-			# print("Puts: ")
-			# for x in range(0, len(put_data)):
-			# 	print(str(x)+" | "+str(put_data[x]))
-			# print()
+			to_return['call']=self.extractOptionData(calls)
+			to_return['put']=self.extractOptionData(puts)
 
 			return to_return
 		except Exception as error:
@@ -176,8 +122,8 @@ class Yahoo:
 
 		
 
-	#this exists just so I won't have to copy paste 100 lines of code.
-	def not_duplicate_code(self, data):
+	#actually extracts option data from scraped content
+	def extractOptionData(self, data):
 		data=data.split("},{")
 
 		for x in range(0, len(data)):
@@ -185,9 +131,7 @@ class Yahoo:
 			data[x]=data[x].replace("}", "")
 			data[x]=data[x].replace("[", "")
 			data[x]=data[x].replace("]", "")
-
 			data[x]=data[x].replace('"', "")
-
 			data[x]=data[x].split(",")
 
 			for y in range(0, len(data[x])):
@@ -211,7 +155,6 @@ class Yahoo:
 		# 30 | 14 | ['percentChange', '+18.67']
 		# 30 | 15 | ['bid', '8.10']
 		# 30 | 16 | ['ask', '8.30']
-
 		
 		new_data=[]
 		for x in range(0, len(data)):
@@ -220,7 +163,6 @@ class Yahoo:
 			for y in range(0, len(data[x])):
 				if data[x][y][0]!="":
 					item=data[x][y][0]
-					# value=data[x][y][1]
 
 					if item=="strike":
 						temp_list['strike']=data[x][y][2]
@@ -242,17 +184,15 @@ class Yahoo:
 		return new_data
 
 
+	#gets available option contract expiration dates
+	def getExpirationDates(self, stock_symbol):
 
-	def get_expiration_dates(self, stock_symbol):
-		# view-source:finance.yahoo.com/q/op?s=AAL
 		try:
-			response = self.opener.open("http://finance.yahoo.com/q/op?s="+str(stock_symbol), timeout=30)
-			data=response.read()
-			data=data.decode('UTF-8')
+			data=self.httpRequest("http://finance.yahoo.com/q/op?s="+str(stock_symbol))
 			h=html.parser.HTMLParser()
 			data=h.unescape(data)
 		except Exception as error:
-			print("URL error (yahoo.py get_expiration_dates()): "+str(error))
+			print("Error when retrieving option contract exp dates ("+stock_symbol.upper()+"): "+str(error))
 			return []
 
 
@@ -260,24 +200,11 @@ class Yahoo:
 		date_ids=[]
 		date_strings=[]
 		try:
-			data=str(data.encode("UTF-8", "replace"))
-
-			# print(data)
-
-			to_search='<option data-selectbox-link="/q/op?s='+str(stock_symbol)+'&date='
-			# while to_search in data:
-
-			# temp_data=data.split(to_search)
-
-
-			date_splits=data.split(to_search)
+			date_splits=data.split('<option data-selectbox-link="/q/op?s='+str(stock_symbol)+'&date=')
 			date_splits.pop(0)
 
 
 			for x in range(0, len(date_splits)):
-
-				# print(date_splits[x])
-
 				temp_data=date_splits[x].split('"')
 
 				#gets date_ids
@@ -326,24 +253,23 @@ class Yahoo:
 			
 		except Exception as error:
 			print("String handling error (yahoo.py get_expiration_dates()): "+str(error))
-		
 
 
 		to_return={}
 		to_return['date_ids']=date_ids
 		to_return['dates']=date_strings
-		# return data
 		return to_return
 
 
-	#timeframe: EX: "10y", "1y"
-	def get_prev_price(self, stock_symbol, prev_date):
-		try:
 
-			response = self.opener.open("http://real-chart.finance.yahoo.com/table.csv?s="+str(stock_symbol)+"&g=d&a="+str(prev_date['month']-1)+"&b="+str(prev_date['day'])+"&c="+str(prev_date['year'])+"&ignore=.csv", timeout=10)
-			
-			data=response.read()
-			data=data.decode('UTF-8')
+	#gets high,low,open,close from a yahoo provided start date to prev_date
+	#prev_date
+	#[0]=month
+	#[1]=day
+	#[2]=year
+	def prevPrice(self, stock_symbol, prev_date):
+		try:
+			data=self.httpRequest("http://real-chart.finance.yahoo.com/table.csv?s="+str(stock_symbol)+"&g=d&a="+str(prev_date['month']-1)+"&b="+str(prev_date['day'])+"&c="+str(prev_date['year'])+"&ignore=.csv")
 			h=html.parser.HTMLParser()
 			data=h.unescape(data)
 
@@ -391,10 +317,10 @@ class Yahoo:
 					#gets split ratio
 					ratio=unadj_close/adj_close
 
-					#adjusts open, high, and low 
-					adj_open=self.convert_number(unadj_open/ratio)
-					adj_high=self.convert_number(unadj_high/ratio)
-					adj_low=self.convert_number(unadj_low/ratio)
+					#adjusts open, high, and low to match new prices after the stock split
+					adj_open=self.convertNumber(unadj_open/ratio)
+					adj_high=self.convertNumber(unadj_high/ratio)
+					adj_low=self.convertNumber(unadj_low/ratio)
 
 				date=data[x][0].split("-")
 				date=str(date[1])+"/"+str(date[2])+"/"+str(date[0])
@@ -409,9 +335,6 @@ class Yahoo:
 				temp_list['adj_close']=float(data[x][6])
 				data[x]=temp_list
 
-			
-
-			# return data[0]
 			data.pop(0)
 			return data
 
@@ -421,10 +344,11 @@ class Yahoo:
 			return []
 
 
-	#timeframe: EX: "10y", "1y"
-	def download_modified_history(self, stock_symbol, timeframe):
+	#retrieves split adjusted interday price history. 
+	#timeframe is in years, EX: "10y", "1y"
+	def downloadAdjustedInterdayHistory(self, stock_symbol, timeframe):
 		try:
-			cur_date=self.get_current_date()
+			cur_date=self.currentDate()
 
 			if "y" not in timeframe:
 				raise ValueError
@@ -483,9 +407,9 @@ class Yahoo:
 					ratio=unadj_close/adj_close
 
 					#adjusts open, high, and low 
-					adj_open=self.convert_number(unadj_open/ratio)
-					adj_high=self.convert_number(unadj_high/ratio)
-					adj_low=self.convert_number(unadj_low/ratio)
+					adj_open=self.convertNumber(unadj_open/ratio)
+					adj_high=self.convertNumber(unadj_high/ratio)
+					adj_low=self.convertNumber(unadj_low/ratio)
 
 				date=data[x][0].split("-")
 				date=str(date[1])+"/"+str(date[2])+"/"+str(date[0])
@@ -509,20 +433,18 @@ class Yahoo:
 			print("URL error (yahoo.py donwload_modified_history()): "+str(error)+" | "+str(stock_symbol)+" "+str(timeframe))
 			return []
 
-	#timeframe: EX: "10y", "1y"
-	def download_unmodified_history(self, stock_symbol, timeframe):
+	#retrieves non-split adjusted interday price history. 
+	#timeframe is in years, EX: "10y", "1y"
+	def downloadUnadjustedInterdayHistory(self, stock_symbol, timeframe):
 		try:
-			cur_date=self.get_current_date()
+			cur_date=self.currentDate()
 
 			if "y" not in timeframe:
 				raise ValueError
 			else:
 				timeframe=int(timeframe.replace("y", ""))
 
-			response = self.opener.open("http://real-chart.finance.yahoo.com/table.csv?s="+str(stock_symbol)+"&g=d&a="+str(cur_date['month']-1)+"&b="+str(cur_date['day'])+"&c="+str(cur_date['year']-timeframe)+"&ignore=.csv", timeout=30)
-			
-			data=response.read()
-			data=data.decode('UTF-8')
+			data=self.httpRequest("http://real-chart.finance.yahoo.com/table.csv?s="+str(stock_symbol)+"&g=d&a="+str(cur_date['month']-1)+"&b="+str(cur_date['day'])+"&c="+str(cur_date['year']-timeframe)+"&ignore=.csv")
 			h=html.parser.HTMLParser()
 			data=h.unescape(data)
 
@@ -572,7 +494,8 @@ class Yahoo:
 			print("URL error (yahoo.py donwload_unmodified_history()): "+str(error)+" | "+str(stock_symbol)+" "+str(timeframe))
 			return []
 
-	def get_current_date(self):
+	#returns current date in format: {"year": 2016, "month": 1, "day": 15}
+	def currentDate(self):
 		curDate=str(datetime.datetime.utcnow() + datetime.timedelta(hours=-self.timezone))
 		date=curDate.split(' ')
 		#2013-12-15
@@ -586,49 +509,25 @@ class Yahoo:
 		to_return['day']=int(cur_date[2])
 		return to_return
 
-	def convert_number(self, number):
+	#returns request results from url
+	def httpRequest(self, url):
+		#sets random user agent
+		self.opener.addheaders=[('User-agent', random.choice(self.user_agents))]
+
+		response = self.opener.open(url, timeout=30)
+		data=response.read()
+		data=data.decode('UTF-8', errors='ignore')
+		return data
+
+		
+	def convertNumber(self, number):
 		return int(number*100)/100
 		
-
-#converts history in dictionary format to CSV list format
-def convert_to_CSV(history):
-
-	new_history=[]
-	for x in range(0, len(history)):
-		temp_list=[]
-		temp_list.append(history[x]['date'])
-		temp_list.append(history[x]['open'])
-		temp_list.append(history[x]['high'])
-		temp_list.append(history[x]['low'])
-		temp_list.append(history[x]['close'])
-		temp_list.append(history[x]['adj_close'])
-		temp_list.append(history[x]['volume'])
-		new_history.append(temp_list)
-
-	return new_history
 
 
 if __name__=="__main__":
 	yahoo=Yahoo()
 
-
-	# prev_date={'month': 4, 'day': 14, 'year': 2016}
-
-
-	# price=yahoo.get_prev_price("AAPL", prev_date)
-	# print("Price: "+str(price))
-	price=yahoo.get_current_price("MNST")
-	print("cur price: "+str(price))
-
-	# symbol="AAPL"
-	# unmodified_history_path="./history/"+symbol+"_modified.csv"
-	# history=yahoo.download_modified_history(symbol, "1y")
-
-
-	# if len(history)>0:
-	# 	CSV_history=convert_to_CSV(history)
-
-	# 	with open(unmodified_history_path, 'w', newline='') as file:
-	# 		contents = csv.writer(file)
-	# 		contents.writerows(CSV_history)
-
+	symbol="AAPL"
+	price=yahoo.currentPrice(symbol)
+	print(symbol+" current price: "+str(price))
